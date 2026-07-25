@@ -12,6 +12,37 @@
 
 }
 
+#mapwrapper{
+    padding: 10px;
+    background-color: #ffd86b;
+    border-radius: 12px;
+    width: fit-content;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+}
+
+#map{
+    width: 500px;
+    height: 350px;
+    background-color: #eee;
+    border: 20px solid, #ffd86b;
+    overflow: hidden;
+    border-radius: 12px;
+    margin-bottom: 0px;
+}
+
+#result{
+    margin-bottom: 0px;
+}
+
+#togglebtn{
+    background-color: #ffd86b;
+    border-color: #ffd86b;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    padding: 10px 15px;
+    font-size: 16px;
+    cursor: pointer;
+}
+
 #content_row{
     display: flex;
     justify-content: center;
@@ -34,6 +65,7 @@
     }
 
     #tmpnscore, #total_box {
+        margin-top: 0px;
         width: 100%;
         max-width: 500px;
     }
@@ -53,7 +85,7 @@
     border-radius: 0 10px 10px 10px;
     width: 100%;
     max-width: 700px;
-    height: 500px;
+    height: 300px;
     text-align: center;
     font-size: 30px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.2);
@@ -68,7 +100,7 @@
 #total_article{
     width: 100%;
     max-width: 800px;
-    height: 460px;
+    height: 260px;
     padding: 20px;
     border-left: 6px solid #ffd86b;
     background: #fffdf5;
@@ -78,7 +110,7 @@
 
 #table_grid{
     margin: 0 auto;
-    margin-top: 40px;
+    margin-top: 10px;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     max-width: 1200px;
