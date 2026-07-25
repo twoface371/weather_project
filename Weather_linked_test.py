@@ -1,9 +1,26 @@
 import requests
 import json
 from datetime import datetime
-
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+import joblib
+import pandas as pd
+
+city_position={'lat':'','lon':''}
+final_data=None
+
+app = Flask(__name__)
+CORS(app)
+
+
+@app.route("/coords", methods=["POST"])
+def coords():
+    data = request.get_json()
+    city_position['lat']=data.get("lat")
+    city_position['lon']=data.get("lon")
+
+    print("받은 좌표:", city_position)
+    return jsonify({"status": "ok"})
 
 
 #도시별 위도/경도
@@ -36,18 +53,15 @@ seoul_gu_coords = {
     }
 
 #당일 날씨 관련 데이터 반환
-def now_get_weather(city_name):
+def now_get_weather(city_position):
 
     #OpenWeather 데이터 호출값
     openweather_url = 'https://api.openweathermap.org/data/2.5/weather'
     openweather_api_key = '863577c3e6d70d7c15a60624a59fdf00'
     
-    city_name = city_name.strip()
-    coords = seoul_gu_coords[city_name]
-
     openweather_params = {
-        'lat': coords['lat'],
-        'lon': coords['lon'],
+        'lat': city_position['lat'],
+        'lon': city_position['lon'],
         'appid': openweather_api_key,
         'units': 'metric',
         'lang': 'kr'
@@ -67,20 +81,23 @@ def now_get_weather(city_name):
 
 
 
-def now_get_dust(city_name) : 
+def now_get_dust(city_position) : 
     #한국환경공단 데이터 호출값(미세먼지, 오존)
     dust_url = 'http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty'
     dust_api_key = 'a2f8c0054fcb8adcd1da40e042d50a736e3eaceb7ad47fb611aca695e898820c'
 
-    city_name = city_name.strip()
-    coords = seoul_gu_coords[city_name]
+    cloesst_gu=min(seoul_gu_coords.items(),
+                    key=lambda x:abs(float(x[1]['lat'])-float(city_position['lat']))+
+                    abs(float(x[1]['lon'])-float(city_position['lon'])))
+
+    gu_name = cloesst_gu[0]
 
     dust_params = {
         'serviceKey' : dust_api_key,
         'returnType' : 'json',
         'numOfRows' : 1,
         'pageNo' : 1,
-        'stationName' : city_name,
+        'stationName' : gu_name,
         'dataTerm' : 'DAILY',       
         'ver' : '1.3',              
     }
@@ -104,76 +121,155 @@ def now_get_dust(city_name) :
         print('Error: HTTP', dust_response.status_code)
         return None
 
-final_data={}
 
 
-city_name = ("강북구")
 
-try:
-    today_weather_data = now_get_weather(city_name)
-    today_dust_data = now_get_dust(city_name)
 
-    total_data=today_weather_data | today_dust_data
-    final_data={'main':total_data['weather'][0]['main'],
-            'temp':total_data['main']['temp'],
-            'feels_like':total_data['main']['feels_like'],
-            'temp_min':total_data['main']['temp_min'],
-            'temp_max':total_data['main']['temp_max'],
-            'humidity':total_data['main']['humidity'],
-            'wind_speed':total_data['wind']['speed'],
-            'wind_degree':total_data['wind']['deg'],
-            'o3grade':total_data['response']['body']['items'][0]['o3Grade'],
-            'pm10value':total_data['response']['body']['items'][0]['pm10Value'],
-            'pm25value':total_data['response']['body']['items'][0]['pm25Value']}
-    # print(final_data)
-except:
-    print("Error : NOT IN SEOUL_GU_COORDS")
 
+
+
+def calculate_weather_score(data):
+    score = 100
     
+    weather_id = data.get('weather_id', 800) # 기본값 맑음(800)
+    pm10 = float(data.get('pm10value',0))
+    pm25 = float(data.get('pm25value',0))
+    temp_max = data.get('temp_max', 0)
+    temp_min = data.get('temp_min', 0)
+    humidity = data.get('humidity', 0)
+    wind_speed = data.get('wind_speed', 0)
+    uv = int(data.get('o3grade',0))
+    # 현재 API에는 자외선 정보가 없으므로 0으로 설정
+    
+    # 일교차 계산
+    diff = abs(temp_max - temp_min)
 
-# print(final_data)
+    # 날씨 코드 
+    code = weather_id // 100 
+    
+    if code == 2: score -= 50  # 뇌우
+    if code == 3: score -= 30  # 이슬비
+    if code == 5: score -= 40  # 비
+    if code == 6: score -= 40  # 눈
+    if code == 7: score -= 20  # 대기질(안개/황사)
+
+    # --- [1] 미세먼지 ---
+    if pm10 > 30:
+        score -= (pm10 - 30) * 0.5
+    if pm25 > 30:
+        score -= (pm10 - 30) * 0.5
+    
+    # --- [2] 온도 ---
+    if temp_max > 24: 
+        score -= (temp_max - 24) * 2.7
+
+    if 10 < temp_min < 18:
+        score -= (18 - temp_min)
+    elif temp_min <= 10:
+        score -= (18 - temp_min) * 2.7
+    
+    # --- [3] 일교차 ---
+    if diff > 7: 
+        score -= (diff - 7) * 2.4
+    
+    # --- [4] 자외선 (데이터 있을 때만 동작, 현재는 데이터 없음) ---
+    if 2 < uv < 6: 
+        score -= (uv - 2) * 0.8
+    elif uv >= 6: 
+        score -= (uv - 6) * 2
+    
+    # --- [5] 습도 ---
+    if humidity > 60:
+        score -= (humidity - 60) * 1.5
+    elif humidity < 40:
+        score -= (40 - humidity) * 1.5
+
+    # --- [6] 풍속 ---
+    if wind_speed > 5:
+        score -= (wind_speed - 5) * 1.5
+
+    # 점수 범위 제한 (0~100)
+    return max(0, min(100, round(score, 1)))
 
 
-    # if today_weather_data and today_dust_data:
-    #     print(f"{today_weather_data}\n\n\n")
-    #     print(today_dust_data)
 
 
-    #날씨가 만약 비, 눈 등이 올 때 강수량, 적설량도 표시해야 됨. + 적운 등 어색한 단어를 적절한 단어로 변환해서 출력해야 됨.
+def get_outfit_recommendation(final_data):
+    # 저장된 모델, 인코더 불러오기
+    temp = final_data.get('temp',0)
+    temp_min = final_data.get('temp_min',0)
+    temp_max = final_data.get('temp_max',0)
 
-    #날씨, 현재 기온 표시
-    #print(f"날씨 : {today_weather_data['weather'][0]['main']}\n현재 기온 : {today_weather_data['main']['temp']}º")
-    #최대 온도, 최소 온도 표시
-    #print(f"최고 : {today_weather_data['main']['temp_max']} \n 최저 : {today_weather_data['main']['temp_max']}")
-    #미세먼지, 습도 표시 
-    #print(f"자외선 : {today_weather_data[]}")
+    try:
+        model = joblib.load('weather_outfit_model.pkl')
+        encoders = joblib.load('outfit_encoders.pkl')
+    except FileNotFoundError:
+        return "모델 파일이 없음. 먼저 학습을 시켜야 됨."
+    
+    daily_range = abs(temp_max - temp_min)
+    input_data = pd.DataFrame([[temp, temp_min, temp_max, daily_range]],  columns=['온도', '최저 온도', '최고 온도', '일교차'])
+    
+    #모델 예측 (숫자로 나옴)
+    prediction = model.predict(input_data)
 
-# if __name__ == '__main__':
-#     main()
+    #숫자를 다시 실제 옷 이름으로 변환
+    target_cols = ['아우터', '상의', '하의', 'ACC']
+    result = {}
+    
+    for i, col in enumerate(target_cols):
+        # 예측값 prediction[0][i]를 그 컬럼의 인코더로 역변환
+        result[col] = encoders[col].inverse_transform([prediction[0][i]])[0]
 
-
-app = Flask(__name__)
-CORS(app)  # 개발용: 모든 출처 허용
+    return result
 
 
 @app.route("/api/data", methods=["GET"])
 def get_data():
+    global final_data
+    if not city_position['lat'] or not city_position['lon']:
+        return jsonify({"error": "좌표가 설정되지 않았습니다."}), 400
+
+    try:
+        today_weather_data = now_get_weather(city_position)
+        today_dust_data = now_get_dust(city_position)
+
+        total_data=today_weather_data | today_dust_data
+        final_data={'main':total_data['weather'][0]['main'],
+                'temp':total_data['main']['temp'],
+                'feels_like':total_data['main']['feels_like'],
+                'temp_min':total_data['main']['temp_min'],
+                'temp_max':total_data['main']['temp_max'],
+                'humidity':total_data['main']['humidity'],
+                'wind_speed':total_data['wind']['speed'],
+                'wind_degree':total_data['wind']['deg'],
+                'o3grade':total_data['response']['body']['items'][0]['o3Grade'],
+                'pm10value':total_data['response']['body']['items'][0]['pm10Value'],
+                'pm25value':total_data['response']['body']['items'][0]['pm25Value']}
+    except:
+        print("Error : NOT IN SEOUL_GU_COORDS")
+
+
     data = final_data
     return jsonify(data)
 
-# POST 예시 (클라이언트가 JSON을 보내면 처리)
-@app.route("/api/echo", methods=["POST"])
-def echo():
-    payload = request.get_json(force=True)  # JSON 파싱
-    payload["received"] = True
-    return jsonify(payload), 201
+@app.route("/cloth/data", methods=["GET"])
+def cloth_data():
+    global cloth
+    try:
+        cloth=get_outfit_recommendation(final_data)
+    except:
+        print("Error: cloth error")
+    return jsonify({"cloth" : cloth})
+
+@app.route("/score/data", methods=["GET"])
+def score_data():
+    global score
+    try:
+        score=calculate_weather_score(final_data)
+    except:
+        print("Error: score error")
+    return jsonify({"score" : score})
+
 
 if __name__ == "__main__":
     app.run(debug=True)
-
-
-
-
-
-
-
