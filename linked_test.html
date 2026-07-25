@@ -4,26 +4,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>날씨~</title>
-    <link rel="stylesheet" href="/weather_front.css">
+    <link rel="stylesheet" href="./weather_front.css">
 </head>
 <body>
     <div id="title_border">
         <h1 id="title">성훈이와 병규의 날씨 알리미~~!</h1>
     </div>
 
+    <button id="togglebtn">지도 보기</button>
+
+    <div id="mapwrapper"> 
+        <div id="map" ></div>
+        <p id="result"></p>
+    </div>
+
+    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=4a9fae61467eace2e8b25888ca904459"></script>
 
     <div id="content_row">
         <div id="tmpnscore">
-            <h2 id="tns_title">오늘의 기온~ 과 점수!</h2>
+            <h2 id="tns_title">오늘의 날씨 점수!</h2>
             <div id="tns_div">
-                <p>대충 내용</p>
+                <p id="score">지도에서 위치를 선택해 주세요!</p>
             </div>
         </div>
 
         <div id="total_box">
-            <h2 id="total_title">종합평가랑 옷차림추천??</h2>
+            <h2 id="total_title">오늘의 옷차림 추천</h2>
             <div id="total_article">
-                <p>내용~</p>
+                <p id="cloth"></p>
             </div>
         </div>
     </div>
